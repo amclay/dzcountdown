@@ -1,9 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"image/color"
-	"log"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -16,63 +15,30 @@ import (
 	htgotts "github.com/hegedustibor/htgo-tts"
 	handlers "github.com/hegedustibor/htgo-tts/handlers"
 	voices "github.com/hegedustibor/htgo-tts/voices"
-	ttlcache "github.com/jellydator/ttlcache/v3"
 )
 
-// globals cause yolo
 var (
-	fyneApp         = app.New()
-	window          = fyneApp.NewWindow("DZ Countdown Timers")
-	timers          = make(map[string]time.Time)
-	timerResetFuncs = make(map[string]func())
-	dzRegion        = "east"
-	grid            = container.New(layout.NewGridLayout(2))
-	red             = color.RGBA{255, 0, 0, 255}
-	green           = color.RGBA{0, 100, 0, 255}
-	blue            = color.RGBA{19, 13, 84, 255}
-	black           = color.RGBA{0, 0, 0, 255}
-	purple          = color.RGBA{128, 0, 128, 255}
-	orange          = color.RGBA{128, 90, 20, 255}
-	white           = color.RGBA{255, 255, 255, 255}
+	timers *sync.Map
 
-	cache = ttlcache.New[string, string]()
+	fyneApp = app.New()
+	window  = fyneApp.NewWindow("DZ Countdown Timers")
+	grid    = container.New(layout.NewGridLayout(2))
+
+	red    = color.RGBA{255, 0, 0, 255}
+	green  = color.RGBA{0, 100, 0, 255}
+	blue   = color.RGBA{19, 13, 84, 255}
+	black  = color.RGBA{0, 0, 0, 255}
+	purple = color.RGBA{128, 0, 128, 255}
+	orange = color.RGBA{128, 90, 20, 255}
+	white  = color.RGBA{255, 255, 255, 255}
+
+	selectedDzRegion string
 )
 
-func main() {
-	go cache.Start()
-
-	fyneApp.Settings().SetTheme(theme.DarkTheme())
-
-	showZonePicker()
-
-	window.ShowAndRun()
-}
-
-func showZonePicker() {
-	for k := range timerResetFuncs {
-		delete(timerResetFuncs, k)
-	}
-	for k := range timers {
-		delete(timers, k)
-	}
-
-	grid.RemoveAll()
-	grid = container.New(layout.NewGridLayout(1))
-
-	grid.Add(widget.NewButton("East", func() {
-		dzRegion = "east"
-		showLandmarkTimers()
-	}))
-	grid.Add(widget.NewButton("West", func() {
-		dzRegion = "west"
-		showLandmarkTimers()
-	}))
-	grid.Add(widget.NewButton("South", func() {
-		dzRegion = "south"
-		showLandmarkTimers()
-	}))
-
-	window.SetContent(grid)
+var dzLandmarksMap = map[string][]string{
+	"east":  {"Labor Department", "Prison Bureau", "Tax Court", "Clock Tower", "Expansion", "Dead Park", "Lab", "Kitchen", "Wreck", "Palace", "DC-62 Storage", "Morgue", "The Grave", "Pool", "Collapse", "Stonehenge", "Reclaimed Forum"},
+	"south": {"Military Camp", "Backfire", "Shantytown", "Bureau", "Shanghai Hotel", "The Swamp", "Garage", "Train Vault", "The Oven", "Chem Storage", "Stockpile", "USDA Theater", "USDA Cafeteria"},
+	"west":  {"Ruined Harbor", "Graveyard", "Papermill", "Flooded Mall", "Deserted Suites", "Back Door", "Mansions", "Hotel 62", "DC-62 Plant"},
 }
 
 type buttonAndText struct {
@@ -80,93 +46,140 @@ type buttonAndText struct {
 	text   *fyne.Container
 }
 
+func init() {
+	fyneApp.Settings().SetTheme(theme.DarkTheme())
+}
+
+func main() {
+	timers = new(sync.Map)
+
+	showZonePicker()
+
+	window.ShowAndRun()
+}
+
+func showZonePicker() {
+	grid.RemoveAll()
+	grid = container.New(layout.NewGridLayout(1))
+
+	grid.Add(widget.NewButton("East", func() {
+		selectedDzRegion = "east"
+		showLandmarkTimers()
+	}))
+	grid.Add(widget.NewButton("West", func() {
+		selectedDzRegion = "west"
+		showLandmarkTimers()
+	}))
+	grid.Add(widget.NewButton("South", func() {
+		selectedDzRegion = "south"
+		showLandmarkTimers()
+	}))
+
+	window.SetContent(grid)
+}
+
 func showLandmarkTimers() {
 	grid.RemoveAll()
 	grid = container.New(layout.NewGridLayout(2))
 
-	ticker := time.NewTicker(100 * time.Millisecond)
-
 	// default to the first item being the "back" button
-	canvasItems := []buttonAndText{{
-		text:   container.NewMax(canvas.NewRectangle(color.Black), widget.NewLabel(dzRegion)),
+	dzText := canvas.NewText(selectedDzRegion, white)
+	dzText.TextSize = 50
+
+	rows := []buttonAndText{{
 		button: container.NewMax(canvas.NewRectangle(purple), widget.NewButton("Zone Picker", showZonePicker)),
+		text:   container.NewMax(canvas.NewRectangle(color.Black), dzText),
 	}}
 
-	landmarks := []string{}
+	// add landmarks to the items we will render
+	for _, landmarkName := range dzLandmarksMap[selectedDzRegion] {
+		landmarkName := landmarkName
 
-	switch dzRegion {
-	case "east":
-		landmarks = []string{"Labor Department", "Prison Bureau", "Tax Court", "Clock Tower", "Expansion", "Dead Park", "Lab", "Kitchen", "Wreck", "Palace", "DC-62 Storage", "Morgue", "The Grave", "Pool", "Collapse", "Stonehenge", "Reclaimed Forum"}
-	case "south":
-		landmarks = []string{"Military Camp", "Backfire", "Bureau", "USDA Theater", "USDA Cafeteria", "Stockpile", "The Oven", "Train Vault", "Garage", "Shanghai Hotel", "The Swamp"}
-	case "west":
-		landmarks = []string{"Ruined Harbor", "Graveyard", "Papermill", "Flooded Mall", "Deserted Suites", "Back Door", "Mansions", "Deserted Suites", "Hotel 62", "DC-62 Plant"}
-	}
-
-	// setup the gui and timers for the landmarks
-	for _, landmark := range landmarks {
-		landmarkName := landmark
-		timerResetFuncs[landmarkName] = func() {
-			timers[landmarkName] = time.Now().Add(30 * time.Minute)
-			for _, item := range canvasItems {
-				if item.button.Objects[1].(*widget.Button).Text == landmarkName {
-					item.button.Objects[0].(*canvas.Rectangle).FillColor = orange
-				}
-			}
+		tappedFunc := func() {
+			updateButtonColor(landmarkName, orange)
+			stopTimer(landmarkName)
+			time.Sleep(1 * time.Second)
+			startTimer(landmarkName, timerCallback, 10)
 		}
-		max := container.NewMax(canvas.NewRectangle(blue), widget.NewButton(landmarkName, timerResetFuncs[landmarkName]))
-		canvasItems = append(canvasItems, buttonAndText{
-			text:   container.NewMax(canvas.NewRectangle(color.Black), canvas.NewText("unknown", white)),
-			button: max,
-		})
+		unknownText := canvas.NewText("unknown", white)
+		unknownText.TextSize = 50
+
+		buttonCanvas := widget.NewButton(landmarkName, tappedFunc)
+
+		buttonContainer := container.NewMax(canvas.NewRectangle(blue), buttonCanvas)
+		text := container.NewMax(canvas.NewRectangle(black), unknownText)
+
+		rows = append(rows, buttonAndText{buttonContainer, text})
 	}
 
-	for _, item := range canvasItems {
-		grid.Add(item.button)
-		grid.Add(item.text)
+	// render our rows
+	for _, row := range rows {
+		grid.Add(row.button)
+		grid.Add(row.text)
 	}
 
 	window.SetContent(grid)
 
-	// poll our timers, yikes
-	go func() {
-		for range ticker.C {
-			for i, item := range canvasItems {
-				i, item := i, item
-				// ignore "zone picker" button
-				if i == 0 {
-					continue
-				}
-				item.text.Objects[1] = canvas.NewText(getTimeLabelForLocation(item.button.Objects[1].(*widget.Button).Text), white)
-
-				if item.text.Objects[1].(*canvas.Text).Text == "00:01" {
-					go func() {
-						locationName := item.button.Objects[1].(*widget.Button).Text
-						// check if spoken before (since we're polling our timer objects yikes)
-						cacheItem := cache.Get(locationName)
-						if cacheItem == nil {
-							log.Println(item.button.Objects[1].(*widget.Button).Text, "is about to expire")
-							cache.Set(locationName, "", 10*time.Second)
-							speech := htgotts.Speech{Folder: "audio", Language: voices.English, Handler: &handlers.Native{}}
-							speech.Speak(item.button.Objects[1].(*widget.Button).Text + " is ready")
-						}
-					}()
-					item.button.Objects[0].(*canvas.Rectangle).FillColor = green
-				}
-			}
-			grid.Refresh()
-		}
-	}()
-
 }
 
-func getTimeLabelForLocation(location string) string {
-	durationLeft := time.Until(timers[location])
+/*
+row 1
+	container
+		rectangle
+		button
+	container
+		rectangle
+		text
+row 2
+	container
+		rectangle
+		button
+	container
+		rectangle
+		text
+*/
 
-	minutes := int(durationLeft.Minutes())
-	seconds := int(durationLeft.Seconds()) - (minutes * 60)
-	if minutes < -9999 {
-		return "unknown"
+func timerCallback(id string) {
+	updateButtonColor(id, green)
+	updateText(id, "00:00")
+	tts(id)
+}
+
+// update button color for a given ID
+func updateButtonColor(id string, color color.Color) {
+	for i, item := range grid.Objects {
+		i, item := i, item
+		// skip header
+		if i == 0 {
+			continue
+		}
+		if button, isButton := item.(*fyne.Container).Objects[1].(*widget.Button); isButton {
+			if button.Text == id {
+				item.(*fyne.Container).Objects[0].(*canvas.Rectangle).FillColor = color
+			}
+		}
 	}
-	return fmt.Sprintf("%02d:%02d", minutes, seconds)
+	grid.Refresh()
+}
+
+// update a row text to have a new value
+func updateText(id string, s string) {
+	for i, row := range grid.Objects {
+		i, row := i, row
+		// skip header
+		if i == 0 {
+			continue
+		}
+		if button, isButton := row.(*fyne.Container).Objects[1].(*widget.Button); isButton {
+			if button.Text == id {
+				grid.Objects[i+1].(*fyne.Container).Objects[1].(*canvas.Text).Text = s
+			}
+		}
+	}
+	grid.Refresh()
+}
+
+func tts(id string) {
+	speech := htgotts.Speech{Folder: "audio", Language: voices.English, Handler: &handlers.Native{}}
+	speech.Speak(id + " is ready")
 }
