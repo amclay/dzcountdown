@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	htgotts "github.com/hegedustibor/htgo-tts"
 	handlers "github.com/hegedustibor/htgo-tts/handlers"
@@ -39,6 +40,8 @@ var (
 
 func main() {
 	go cache.Start()
+
+	fyneApp.Settings().SetTheme(theme.DarkTheme())
 
 	showZonePicker()
 
@@ -111,8 +114,7 @@ func showLandmarkTimers() {
 				}
 			}
 		}
-		button := widget.NewButton(landmarkName, timerResetFuncs[landmarkName])
-		max := container.NewMax(canvas.NewRectangle(blue), button)
+		max := container.NewMax(canvas.NewRectangle(blue), widget.NewButton(landmarkName, timerResetFuncs[landmarkName]))
 		canvasItems = append(canvasItems, buttonAndText{
 			text:   container.NewMax(canvas.NewRectangle(color.Black), canvas.NewText("unknown", white)),
 			button: max,
@@ -135,9 +137,8 @@ func showLandmarkTimers() {
 				if i == 0 {
 					continue
 				}
-				item.text.Objects[1].(*canvas.Text).Text = getTimeLabelForLocation(item.button.Objects[1].(*widget.Button).Text)
-				item.text.Objects[1].(*canvas.Text).Color = white
-				item.text.Objects[1].(*canvas.Text).TextStyle.Bold = true
+				item.text.Objects[1] = canvas.NewText(getTimeLabelForLocation(item.button.Objects[1].(*widget.Button).Text), white)
+
 				if item.text.Objects[1].(*canvas.Text).Text == "00:01" {
 					go func() {
 						locationName := item.button.Objects[1].(*widget.Button).Text
