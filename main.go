@@ -10,7 +10,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	htgotts "github.com/hegedustibor/htgo-tts"
 	handlers "github.com/hegedustibor/htgo-tts/handlers"
@@ -18,10 +17,11 @@ import (
 )
 
 var (
-	timers *sync.Map
+	timerSeconds = 1800
+	timers       *sync.Map
 
 	fyneApp = app.New()
-	window  = fyneApp.NewWindow("DZ Countdown Timers")
+	window  = fyneApp.NewWindow("SUS/DVS/SAS Countdown Timers")
 	grid    = container.New(layout.NewGridLayout(2))
 
 	red    = color.RGBA{255, 0, 0, 255}
@@ -31,8 +31,6 @@ var (
 	purple = color.RGBA{128, 0, 128, 255}
 	orange = color.RGBA{128, 90, 20, 255}
 	white  = color.RGBA{255, 255, 255, 255}
-
-	selectedDzRegion string
 )
 
 var dzLandmarksMap = map[string][]string{
@@ -46,8 +44,17 @@ type buttonAndText struct {
 	text   *fyne.Container
 }
 
+func (b *buttonAndText) updateText(id string, text string) {
+	b.text.Objects[1].(*canvas.Text).Text = text
+}
+
+func (b *buttonAndText) updateColor(id string, color color.Color) {
+	b.button.Objects[0].(*canvas.Rectangle).FillColor = color
+}
+
 func init() {
-	fyneApp.Settings().SetTheme(theme.DarkTheme())
+
+	fyneApp.Settings().SetTheme(myTheme{})
 }
 
 func main() {
@@ -59,67 +66,68 @@ func main() {
 }
 
 func showZonePicker() {
+
 	grid.RemoveAll()
 	grid = container.New(layout.NewGridLayout(1))
 
 	grid.Add(widget.NewButton("East", func() {
-		selectedDzRegion = "east"
-		showLandmarkTimers()
+		showLandmarkTimers("east")
 	}))
 	grid.Add(widget.NewButton("West", func() {
-		selectedDzRegion = "west"
-		showLandmarkTimers()
+		showLandmarkTimers("west")
 	}))
 	grid.Add(widget.NewButton("South", func() {
-		selectedDzRegion = "south"
-		showLandmarkTimers()
+		showLandmarkTimers("south")
 	}))
+
+	window.SetContent(grid)
+
+	// set window size
+	window.Resize(fyne.NewSize(500, 600))
+}
+
+func showLandmarkTimers(region string) {
+	grid.RemoveAll()
+	grid = container.New(layout.NewGridLayout(2))
+
+	for _, item := range getGridItemsForLayout(region) {
+		grid.Add(item.button)
+		grid.Add(item.text)
+	}
 
 	window.SetContent(grid)
 }
 
-func showLandmarkTimers() {
-	grid.RemoveAll()
-	grid = container.New(layout.NewGridLayout(2))
-
+func getGridItemsForLayout(region string) []*buttonAndText {
 	// default to the first item being the "back" button
-	dzText := canvas.NewText(selectedDzRegion, white)
-	dzText.TextSize = 50
+	dzText := canvas.NewText(region, white)
+	dzText.TextSize = 30
 
-	rows := []buttonAndText{{
+	rows := []*buttonAndText{{
 		button: container.NewMax(canvas.NewRectangle(purple), widget.NewButton("Zone Picker", showZonePicker)),
 		text:   container.NewMax(canvas.NewRectangle(color.Black), dzText),
 	}}
 
 	// add landmarks to the items we will render
-	for _, landmarkName := range dzLandmarksMap[selectedDzRegion] {
+	for _, landmarkName := range dzLandmarksMap[region] {
 		landmarkName := landmarkName
 
 		tappedFunc := func() {
 			updateButtonColor(landmarkName, orange)
 			stopTimer(landmarkName)
 			time.Sleep(1 * time.Second)
-			startTimer(landmarkName, timerCallback, 10)
+			startTimer(landmarkName, timerCallback, timerSeconds)
 		}
 		unknownText := canvas.NewText("unknown", white)
-		unknownText.TextSize = 50
+		unknownText.TextSize = 30
 
-		buttonCanvas := widget.NewButton(landmarkName, tappedFunc)
+		buttonContainer := container.NewMax(canvas.NewRectangle(blue), widget.NewButton(landmarkName, tappedFunc))
 
-		buttonContainer := container.NewMax(canvas.NewRectangle(blue), buttonCanvas)
 		text := container.NewMax(canvas.NewRectangle(black), unknownText)
 
-		rows = append(rows, buttonAndText{buttonContainer, text})
+		rows = append(rows, &buttonAndText{buttonContainer, text})
 	}
-
-	// render our rows
-	for _, row := range rows {
-		grid.Add(row.button)
-		grid.Add(row.text)
-	}
-
-	window.SetContent(grid)
-
+	return rows
 }
 
 /*
