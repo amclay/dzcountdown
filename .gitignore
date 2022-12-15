@@ -1,4 +1,7 @@
- fyne-cross/
- dzcountdown.exe
- *.exe
- audio/
+fyne-cross/
+dzcountdown.exe
+*.exe
+audio/
+east_annotated.png
+south_annotated.png
+west_annotated.png
