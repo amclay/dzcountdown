@@ -53,52 +53,36 @@ var (
 
 var dzLandmarksMap = map[string][]string{
 	"east": {
-		"Labor Department",
 		"Prison Bureau",
-		"Tax Court",
 		"Clock Tower",
 		"Expansion",
-		"Dead Park",
 		"Lab",
-		"Kitchen",
-		"Wreck",
 		"Palace",
 		"DC-62 Storage",
 		"Morgue",
-		"The Grave",
 		"Pool",
-		"Collapse",
 		"Stonehenge",
-		"Reclaimed Forum",
 		"CERA Camp",
 		"Catacombs",
 	},
 	"south": {
-		"Military Camp",
 		"Backfire",
 		"Shantytown",
-		"Bureau",
 		"Shanghai Hotel",
-		"The Swamp",
 		"Garage",
-		"Train Vault",
 		"The Oven",
 		"Chem Storage",
-		"Stockpile",
 		"USDA Theater",
 		"USDA Cafeteria",
 	},
 	"west": {
-		"Ruined Harbor",
 		"Graveyard",
 		"Papermill",
-		"Canal Court",
 		"Flooded Mall",
 		"Deserted Suites",
 		"Back Door",
 		"Twin Courts",
 		"Mansions",
-		"Hotel 62",
 		"DC-62 Plant",
 	},
 }
@@ -259,6 +243,6 @@ func tts(id string) {
 	if len(idParts) > 1 {
 		id = idParts[1]
 	}
-	speech := htgotts.Speech{Folder: "audio", Language: voices.English, Handler: &handlers.Native{}}
+	speech := htgotts.Speech{Folder: "audio", Language: voices.EnglishUK, Handler: &handlers.Native{}}
 	speech.Speak(id + " is ready")
 }

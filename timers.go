@@ -9,6 +9,7 @@ import (
 type timerFunc func(id string)
 
 func startTimer(id string, callbackFunc timerFunc, timeout int) {
+	time.Sleep(100 * time.Millisecond)
 	stopTime := time.Now().Add(time.Duration(timeout) * time.Second)
 
 	log.Printf("starting timer for location: %s", id)
@@ -20,6 +21,7 @@ func startTimer(id string, callbackFunc timerFunc, timeout int) {
 	timer := time.NewTimer(time.Duration(timeout) * time.Second)
 	timers.Store(id, timer)
 
+	time.Sleep(100 * time.Millisecond)
 	go func() {
 		for {
 			select {
@@ -42,6 +44,7 @@ func startTimer(id string, callbackFunc timerFunc, timeout int) {
 		}
 	}()
 }
+
 func stopTimer(id string) {
 	log.Printf("stopping timer for location: %s", id)
 	if a, ok := timers.Load(id); ok {
