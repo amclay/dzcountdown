@@ -7,8 +7,11 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"math/rand"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -19,6 +22,7 @@ import (
 	htgotts "github.com/hegedustibor/htgo-tts"
 	handlers "github.com/hegedustibor/htgo-tts/handlers"
 	voices "github.com/hegedustibor/htgo-tts/voices"
+	"github.com/kindlyfire/go-keylogger"
 )
 
 var (
@@ -26,7 +30,7 @@ var (
 	timers       *sync.Map
 
 	fyneApp         = app.New()
-	window          = fyneApp.NewWindow("SUS/DVS/SAS Countdown Timers")
+	window          = fyneApp.NewWindow("Xangold's Countdown Timers")
 	parentContainer = container.New(layout.NewHBoxLayout())
 	grid            = container.New(layout.NewGridLayout(2))
 
@@ -49,21 +53,24 @@ var (
 
 	//go:embed east_annotated.png
 	eastImage []byte
+
+	finishedPhrasesPrefixes = []string{"Get ready for", "Get your ass moving to", "Prepare for", "Hurry up to", "Run to", "Get going to", "Lets get going to ", "Next up is"}
+	finishedPhrasesSuffixes = []string{"You idiot", "You donkey", "dumb agent", "slowpoke", "moron", "poo poo head", "dummy", "brainwashed puppet"}
 )
 
 var dzLandmarksMap = map[string][]string{
 	"east": {
-		"Prison Bureau",
+		"Lab",
 		"Clock Tower",
 		"Expansion",
-		"Lab",
-		"Palace",
-		"DC-62 Storage",
-		"Morgue",
+		"Prison Bureau",
 		"Pool",
 		"Stonehenge",
-		"CERA Camp",
 		"Catacombs",
+		"CERA Camp",
+		"Morgue",
+		"DC-62 Storage",
+		"Palace",
 	},
 	"south": {
 		"Backfire",
@@ -71,19 +78,18 @@ var dzLandmarksMap = map[string][]string{
 		"Shanghai Hotel",
 		"Garage",
 		"The Oven",
-		"Chem Storage",
-		"USDA Theater",
 		"USDA Cafeteria",
+		"USDA Theater",
 	},
 	"west": {
+		"DC-62 Plant",
+		"Mansions",
+		"Back Door",
+		"Twin Courts",
 		"Graveyard",
 		"Papermill",
 		"Flooded Mall",
 		"Deserted Suites",
-		"Back Door",
-		"Twin Courts",
-		"Mansions",
-		"DC-62 Plant",
 	},
 }
 
@@ -94,12 +100,42 @@ func init() {
 		}
 	}
 	fyneApp.Settings().SetTheme(myTheme{})
+
+}
+
+type extendedButton struct {
+	widget.Button
+}
+
+func newExtendedButton(label string, tapped func()) *extendedButton {
+	ret := &extendedButton{}
+	ret.ExtendBaseWidget(ret)
+	ret.Text = label
+	ret.OnTapped = tapped
+	return ret
+}
+
+func (eb *extendedButton) TappedSecondary(pe *fyne.PointEvent) {
+	id := eb.Text
+	stopTime, ok := timers.Load(id)
+	if !ok {
+		return
+	}
+
+	t := stopTime.(time.Time)
+	t2 := t.Add(-30 * time.Second)
+
+	timers.Store(id, t2)
 }
 
 func main() {
+
 	timers = new(sync.Map)
 
 	showZonePicker()
+
+	go timerLoop()
+	go listenForF5()
 
 	window.ShowAndRun()
 }
@@ -184,12 +220,6 @@ func getLandmarkRows(region string) []*landmarkRow {
 	return rows
 }
 
-func timerCallback(id string) {
-	updateButtonColor(id, green)
-	updateText(id, fmt.Sprintf("%-7s", "00:00"))
-	tts(id)
-}
-
 // update button color for a given ID
 func updateButtonColor(id string, color color.Color) {
 	for _, row := range globalLandmarkRows {
@@ -210,14 +240,18 @@ func updateText(id string, s string) {
 	grid.Refresh()
 }
 
+func getLastGridItemName() string {
+	return grid.Objects[len(grid.Objects)-1].(*fyne.Container).Objects[0].(*fyne.Container).Objects[1].(*extendedButton).Text
+}
+
 // move the timer to the top of the list
 func moveToTop(id string) {
 	for i, gridItem := range grid.Objects {
 		if i == 0 {
 			continue
 		}
-		// hocus pocus shit to get the button
-		landmarkName := gridItem.(*fyne.Container).Objects[0].(*fyne.Container).Objects[1].(*widget.Button).Text
+		// hocus pocus shit to get the landmark name from the canvas
+		landmarkName := gridItem.(*fyne.Container).Objects[0].(*fyne.Container).Objects[1].(*extendedButton).Text
 		if landmarkName == id {
 			grid.Objects = moveItem(grid.Objects, i, 1)
 		}
@@ -244,5 +278,36 @@ func tts(id string) {
 		id = idParts[1]
 	}
 	speech := htgotts.Speech{Folder: "audio", Language: voices.EnglishUK, Handler: &handlers.Native{}}
-	speech.Speak(id + " is ready")
+
+	prefix := finishedPhrasesPrefixes[rand.Intn(len(finishedPhrasesPrefixes))]
+	suffix := finishedPhrasesSuffixes[rand.Intn(len(finishedPhrasesSuffixes))]
+
+	speech.Speak(fmt.Sprintf("%s %s, %s", prefix, id, suffix))
+}
+
+func listenForF5() {
+	// listen to F5 key, and move the last grid item to the top on press if using windows
+	if runtime.GOOS == "windows" {
+		keylogger := keylogger.NewKeylogger()
+		go func() {
+			for {
+				time.Sleep(10 * time.Millisecond)
+				if globalRegion == "" {
+					continue
+				}
+				key := keylogger.GetKey()
+				if key.Keycode == 116 && !key.Empty {
+					id := getLastGridItemName()
+					moveToTop(id)
+					updateButtonColor(id, orange)
+
+					timers.Delete(id)
+
+					startTimer(id, timerSeconds)
+
+					moveToTop(id)
+				}
+			}
+		}()
+	}
 }

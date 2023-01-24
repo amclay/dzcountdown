@@ -3,19 +3,45 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"log"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/widget"
 )
 
 type landmarkRow struct {
 	landmarkName    string
 	buttonContainer *fyne.Container
 	textContainer   *fyne.Container
+}
+
+func timerLoop() {
+	// timer that ticks every 1 second
+	for {
+		time.Sleep(100 * time.Millisecond)
+		for _, landmarkName := range dzLandmarksMap[globalRegion] {
+			// get time until timer expires
+			stopTime, ok := timers.Load(landmarkName)
+			if !ok {
+				continue
+			}
+			durationLeft := time.Until(stopTime.(time.Time))
+			minutes := int(durationLeft.Minutes())
+			seconds := int(durationLeft.Seconds()) - (minutes * 60)
+			if minutes <= 0 && seconds <= 0 {
+				log.Println("no time remaining for", landmarkName)
+				timers.Delete(landmarkName)
+				updateText(landmarkName, fmt.Sprintf("%-7s", "00:00"))
+				go tts(landmarkName)
+				updateButtonColor(landmarkName, green)
+				continue
+			}
+			updateText(landmarkName, fmt.Sprintf("%02d:%02d", minutes, seconds))
+		}
+	}
 }
 
 func newLandmarkRow(landmarkName string) *landmarkRow {
@@ -25,14 +51,15 @@ func newLandmarkRow(landmarkName string) *landmarkRow {
 	tappedFunc := func() {
 		moveToTop(landmarkName)
 		updateButtonColor(landmarkName, orange)
-		stopTimer(landmarkName)
-		time.Sleep(1 * time.Second)
-		startTimer(landmarkName, timerCallback, timerSeconds)
+		timers.Delete(landmarkName)
+		time.Sleep(100 * time.Millisecond)
+		startTimer(landmarkName, timerSeconds)
 	}
 
-	buttonContainer := container.NewMax(canvas.NewRectangle(blue), widget.NewButton(landmarkName, tappedFunc))
-	textContainer := container.NewMax(canvas.NewRectangle(black), unknownText)
+	buttonObject := newExtendedButton(landmarkName, tappedFunc)
 
+	buttonContainer := container.NewMax(canvas.NewRectangle(blue), buttonObject)
+	textContainer := container.NewMax(canvas.NewRectangle(black), unknownText)
 	return &landmarkRow{
 		landmarkName:    landmarkName,
 		buttonContainer: buttonContainer,
